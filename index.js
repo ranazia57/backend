@@ -7,7 +7,7 @@ const faqs = require('./faqs.json');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
-const Fuse = require('fuse.js'); // <-- Fuse.js import
+const Fuse = require('fuse.js');
 
 const app = express();
 app.use(cors());
@@ -16,14 +16,14 @@ app.use(bodyParser.json());
 // === Fuse.js setup for FAQs ===
 const fuse = new Fuse(faqs, {
   keys: ['question'],
-  threshold: 0.4, // 0.3-0.4 is best for most cases
+  threshold: 0.4,
 });
 
 // === Chat Endpoint (Groq Llama 3 + FAQ Fuzzy Matching with Fuse.js) ===
 app.post('/api/chat', async (req, res) => {
   const userMessage = req.body.message;
 
-  // 1. Exact match (optional, but Fuse also catches exact)
+  // 1. Exact match
   const found = faqs.find(faq =>
     userMessage.toLowerCase().trim() === faq.question.toLowerCase().trim()
   );
@@ -34,24 +34,21 @@ app.post('/api/chat', async (req, res) => {
   // 2. Fuse.js fuzzy match
   const results = fuse.search(userMessage);
   if (results.length > 0) {
-    // Sab se relevant answer do
     return res.json({ answer: results[0].item.answer });
   }
 
-  // 3. If nothing relevant, call Groq API
+  // 3. Groq API fallback
   try {
     const groqRes = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
         model: 'llama3-70b-8192',
-        messages: [
-          { role: 'user', content: userMessage }
-        ]
+        messages: [{ role: 'user', content: userMessage }],
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
         }
       }
     );
@@ -63,18 +60,16 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// === Lead Capture Endpoint (same as before) ===
+// === Lead Capture Endpoint ===
 app.post('/api/lead', async (req, res) => {
   const { name, email, message } = req.body;
 
-  // 1. PDF generate (in-memory)
   const doc = new PDFDocument();
   let buffers = [];
   doc.on('data', buffers.push.bind(buffers));
   doc.on('end', async () => {
     const pdfData = Buffer.concat(buffers);
 
-    // 2. Email send (credentials from .env)
     let transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -105,7 +100,6 @@ app.post('/api/lead', async (req, res) => {
     }
   });
 
-  // PDF content
   doc.fontSize(20).text('Client Requirement', { align: 'center' });
   doc.moveDown();
   doc.fontSize(14).text(`Name: ${name}`);
@@ -116,4 +110,6 @@ app.post('/api/lead', async (req, res) => {
   doc.end();
 });
 
-app.listen(5000, () => console.log('Server running on port 5000'));
+// ✅ THIS IS THE ONLY UPDATED LINE BELOW:
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
